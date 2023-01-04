@@ -1,9 +1,9 @@
 use std::io::Write;
 
-use nom::{bytes::complete::is_not, IResult};
+use nom::{bytes::complete::{is_not, escaped}, IResult, character::complete::one_of};
 
 fn parser(s: &str) -> IResult<&str, &str> {
-    is_not("[]\\")(s)
+    escaped(is_not("\\[]"), '\\', one_of("\\[]"))(s)
 }
 
 fn main() {
