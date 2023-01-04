@@ -3,10 +3,11 @@ use std::io::Write;
 use nom::{
     branch::alt,
     bytes::complete::{escaped, is_not, tag},
+    character::complete::char as character,
     character::complete::one_of,
-    combinator::map,
-    multi::many0,
-    sequence::{delimited, separated_pair},
+    combinator::{map, not, eof},
+    multi::{many0, many1, many_till},
+    sequence::{delimited, separated_pair, pair},
     IResult,
 };
 
@@ -37,7 +38,7 @@ fn tag_without_contents(s: &str) -> IResult<&str, Node<'_>> {
 }
 
 fn tag_contents(s: &str) -> IResult<&str, Vec<Node>> {
-    many0(alt((text, tag_without_contents, tag_with_contents)))(s)
+    map(many_till(alt((tag_without_contents, tag_with_contents, text)), eof), |(nodes, _)| nodes)(s)
 }
 
 fn tag_with_contents(s: &str) -> IResult<&str, Node<'_>> {
@@ -47,7 +48,10 @@ fn tag_with_contents(s: &str) -> IResult<&str, Node<'_>> {
             separated_pair(tag_name, tag(":"), tag_contents),
             tag("]"),
         ),
-        |(name, contents)| Node::Tag { name, contents: Some(contents) },
+        |(name, contents)| Node::Tag {
+            name,
+            contents: Some(contents),
+        },
     )(s)
 }
 
@@ -57,6 +61,6 @@ fn main() {
         print!("> ");
         std::io::stdout().flush().unwrap();
         std::io::stdin().read_line(&mut line).unwrap();
-        println!("{:?}", tag_contents(&line.strip_suffix('\n').unwrap()));
+        println!("{:?}", tag_contents(line.strip_suffix('\n').unwrap()));
     }
 }
