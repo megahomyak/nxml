@@ -1,9 +1,9 @@
 use std::io::Write;
 
-use nom::{bytes::complete::tag, IResult};
+use nom::{bytes::complete::is_not, IResult};
 
-fn hello_parser(s: &str) -> IResult<&str, &str> {
-    tag("hello")(s)
+fn parser(s: &str) -> IResult<&str, &str> {
+    is_not("[]\\")(s)
 }
 
 fn main() {
@@ -12,6 +12,6 @@ fn main() {
         print!("> ");
         std::io::stdout().flush().unwrap();
         std::io::stdin().read_line(&mut line).unwrap();
-        println!("{:?}", hello_parser(&line.strip_suffix('\n').unwrap()));
+        println!("{:?}", parser(&line.strip_suffix('\n').unwrap()));
     }
 }
