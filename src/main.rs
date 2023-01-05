@@ -1,67 +1,282 @@
 use std::io::Write;
 
-use nom::{
-    branch::alt,
-    bytes::complete::{escaped, is_not, tag},
-    character::complete::one_of,
-    combinator::map,
-    multi::many0,
-    sequence::{delimited, separated_pair},
-    IResult,
-};
-
 #[derive(Debug)]
-pub enum Node<'a> {
+pub enum Node {
     Tag {
-        name: &'a str,
-        contents: Option<Vec<Node<'a>>>,
+        name: String,
+        contents: Option<Vec<Node>>,
     },
-    Text(&'a str),
+    Text(String),
 }
 
-fn text(s: &str) -> IResult<&str, Node<'_>> {
-    let result = map(escaped(is_not("\\[]"), '\\', one_of("\\[]")), |text| {
-        Node::Text(text)
-    })(s);
-    match result {
-        IResult::Ok((rest, node)) => match node {
-            Node::Text("") => IResult::Err(nom::Err::Error(nom::error::Error::new(
+pub enum ParsingResult<'a, T, E> {
+    Ok {
+        rest: &'a str,
+        value: T,
+        next_error: E,
+    },
+    Err(E),
+}
+
+mod text {
+    use crate::ParsingResult;
+
+    enum Character {
+        Colon,
+        OpeningBracket,
+        ClosingBracket,
+        Escape,
+        Other(char),
+    }
+
+    impl From<char> for Character {
+        fn from(value: char) -> Self {
+            match value {
+                ':' => Self::Colon,
+                '[' => Self::OpeningBracket,
+                ']' => Self::ClosingBracket,
+                '\\' => Self::Escape,
+                _ => Self::Other(value),
+            }
+        }
+    }
+
+    impl From<Character> for char {
+        fn from(value: Character) -> Self {
+            match value {
+                Character::Escape => '\\',
+                Character::OpeningBracket => '[',
+                Character::ClosingBracket => ']',
+                Character::Colon => ':',
+                Character::Other(c) => c,
+            }
+        }
+    }
+
+    pub enum ParsingError {
+        UnknownCharacterEscaped,
+        EscapeCharacterIsAtTheEndOfTheString,
+        StringIsEmpty,
+        StringStartsWithAnOpeningBracket,
+        StringStartsWithAClosedBracket,
+        StringStartsWithAColon,
+    }
+
+    pub fn parse_text(input: &str) -> ParsingResult<'_, String, ParsingError> {
+        fn ok(
+            mut text: String,
+            rest: &str,
+            next_error: ParsingError,
+        ) -> ParsingResult<String, ParsingError> {
+            text.shrink_to_fit();
+            ParsingResult::Ok {
                 rest,
-                nom::error::ErrorKind::NonEmpty,
-            ))),
-            _ => IResult::Ok((rest, node)),
-        },
-        IResult::Err(err) => IResult::Err(err),
+                value: text,
+                next_error,
+            }
+        }
+
+        let mut char_indices = input.char_indices().map(|(index, c)| (index, c.into()));
+        let mut index = match char_indices.next() {
+            None => return ParsingResult::Err(ParsingError::StringIsEmpty),
+            Some((_, Character::OpeningBracket)) => {
+                return ParsingResult::Err(ParsingError::StringStartsWithAnOpeningBracket)
+            }
+            Some((_, Character::ClosingBracket)) => {
+                return ParsingResult::Err(ParsingError::StringStartsWithAClosedBracket)
+            }
+            Some((_, Character::Colon)) => {
+                return ParsingResult::Err(ParsingError::StringStartsWithAColon)
+            }
+            Some((_, Character::Escape)) => match char_indices.next() {
+                None => {
+                    return ParsingResult::Err(ParsingError::EscapeCharacterIsAtTheEndOfTheString)
+                }
+                Some((
+                    index,
+                    Character::OpeningBracket
+                    | Character::ClosingBracket
+                    | Character::Colon
+                    | Character::Escape,
+                )) => index,
+                Some((_, Character::Other(_))) => {
+                    return ParsingResult::Err(ParsingError::UnknownCharacterEscaped)
+                }
+            },
+            Some((index, _)) => index,
+        };
+        let mut text = String::new();
+        loop {
+            index = match char_indices.next() {
+                None => return ok(text, "", ParsingError::StringIsEmpty),
+                Some((index, Character::ClosingBracket)) => {
+                    return ok(
+                        text,
+                        &input[index..],
+                        ParsingError::StringStartsWithAClosedBracket,
+                    )
+                }
+                Some((index, Character::OpeningBracket)) => {
+                    return ok(
+                        text,
+                        &input[index..],
+                        ParsingError::StringStartsWithAnOpeningBracket,
+                    )
+                }
+                Some((index, Character::Colon)) => {
+                    return ok(text, &input[index..], ParsingError::StringStartsWithAColon)
+                }
+                Some((_, Character::Escape)) => match char_indices.next() {
+                    None => {
+                        return ParsingResult::Err(
+                            ParsingError::EscapeCharacterIsAtTheEndOfTheString,
+                        )
+                    }
+                    Some((
+                        index,
+                        c @ (Character::ClosingBracket
+                        | Character::OpeningBracket
+                        | Character::Colon),
+                    )) => {
+                        text.push(c.into());
+                        index
+                    }
+                    Some((_, _)) => {
+                        return ParsingResult::Err(ParsingError::UnknownCharacterEscaped)
+                    }
+                },
+                Some((index, c)) => {
+                    text.push(c.into());
+                    index
+                }
+            };
+        }
     }
 }
 
-fn tag_name(s: &str) -> IResult<&str, &str> {
-    escaped(is_not("\\[]:"), '\\', one_of("\\[]:"))(s)
+#[derive(Debug)]
+pub enum ParsingError {
+    UnknownCharacterEscaped,
+    UnclosedBracket,
+    EscapeCharacterIsAtTheEndOfTheString,
+    UnexpectedClosingBracket,
+    UnexpectedColon,
+    TagInsideTagName,
 }
 
-fn tag_without_contents(s: &str) -> IResult<&str, Node<'_>> {
-    map(delimited(tag("["), tag_name, tag("]")), |name| Node::Tag {
-        name,
-        contents: None,
-    })(s)
-}
+pub fn parse_sequential_nodes(mut input: &str) -> Result<Vec<Node>, ParsingError> {
+    enum ProcessingResult {
+        ParsingIsDone,
+        Error(ParsingError),
+        NewNode(Node),
+    }
 
-fn tag_contents(s: &str) -> IResult<&str, Vec<Node>> {
-    many0(alt((tag_without_contents, tag_with_contents, text)))(s)
-}
+    fn process_error(error: text::ParsingError, input: &mut &str) -> ProcessingResult {
+        match error {
+            text::ParsingError::StringStartsWithAColon => {
+                return ProcessingResult::Error(ParsingError::UnexpectedColon)
+            }
+            text::ParsingError::StringIsEmpty => ProcessingResult::ParsingIsDone,
+            text::ParsingError::StringStartsWithAClosedBracket => {
+                return ProcessingResult::Error(ParsingError::UnexpectedClosingBracket)
+            }
+            text::ParsingError::UnknownCharacterEscaped => {
+                return ProcessingResult::Error(ParsingError::UnknownCharacterEscaped)
+            }
+            text::ParsingError::EscapeCharacterIsAtTheEndOfTheString => {
+                return ProcessingResult::Error(ParsingError::EscapeCharacterIsAtTheEndOfTheString)
+            }
+            text::ParsingError::StringStartsWithAnOpeningBracket => {
+                let mut chars = input.chars();
+                chars.next();
+                *input = chars.as_str();
+                match text::parse_text(input) {
+                    ParsingResult::Ok {
+                        rest,
+                        value: name,
+                        next_error,
+                    } => {
+                        *input = rest;
+                        match next_error {
+                            text::ParsingError::StringStartsWithAnOpeningBracket => {
+                                ProcessingResult::Error(ParsingError::TagInsideTagName)
+                            }
+                            text::ParsingError::EscapeCharacterIsAtTheEndOfTheString => {
+                                ProcessingResult::Error(
+                                    ParsingError::EscapeCharacterIsAtTheEndOfTheString,
+                                )
+                            }
+                            text::ParsingError::UnknownCharacterEscaped => {
+                                ProcessingResult::Error(ParsingError::UnknownCharacterEscaped)
+                            }
+                            text::ParsingError::StringIsEmpty => {
+                                ProcessingResult::Error(ParsingError::UnclosedBracket)
+                            }
+                            text::ParsingError::StringStartsWithAColon => todo!("parse the body (THE NAME IS ALREADY PARSED AND IS NOT AN EMPTY STRING)"),
+                            text::ParsingError::StringStartsWithAClosedBracket => {
+                                ProcessingResult::NewNode(Node::Tag {
+                                    name,
+                                    contents: None,
+                                })
+                            }
+                        }
+                    }
+                    ParsingResult::Err(error) => match error {
+                        text::ParsingError::StringStartsWithAColon => {
+                            todo!("parse the rest of the tag; there is NO NAME in this case (it's an empty string)")
+                        }
+                        text::ParsingError::StringIsEmpty => {
+                            ProcessingResult::Error(ParsingError::UnclosedBracket)
+                        }
+                        text::ParsingError::StringStartsWithAClosedBracket => {
+                            ProcessingResult::NewNode(Node::Tag {
+                                name: String::new(),
+                                contents: None,
+                            })
+                        }
+                        text::ParsingError::UnknownCharacterEscaped => {
+                            ProcessingResult::Error(ParsingError::UnknownCharacterEscaped)
+                        }
+                        text::ParsingError::EscapeCharacterIsAtTheEndOfTheString => {
+                            ProcessingResult::Error(
+                                ParsingError::EscapeCharacterIsAtTheEndOfTheString,
+                            )
+                        }
+                        text::ParsingError::StringStartsWithAnOpeningBracket => {
+                            ProcessingResult::Error(ParsingError::TagInsideTagName)
+                        }
+                    },
+                }
+            }
+        }
+    }
 
-fn tag_with_contents(s: &str) -> IResult<&str, Node<'_>> {
-    map(
-        delimited(
-            tag("["),
-            separated_pair(tag_name, tag(":"), tag_contents),
-            tag("]"),
-        ),
-        |(name, contents)| Node::Tag {
-            name,
-            contents: Some(contents),
-        },
-    )(s)
+    let mut nodes = Vec::new();
+    loop {
+        let new_node = {
+            match text::parse_text(input) {
+                ParsingResult::Ok {
+                    rest,
+                    value,
+                    next_error,
+                } => {
+                    input = rest;
+                    match process_error(next_error, &mut input) {
+                        ProcessingResult::ParsingIsDone => return Ok(nodes),
+                        ProcessingResult::NewNode(node) => nodes.push(node),
+                        ProcessingResult::Error(error) => return Err(error),
+                    }
+                    Node::Text(value)
+                }
+                ParsingResult::Err(error) => match process_error(error, &mut input) {
+                    ProcessingResult::ParsingIsDone => return Ok(nodes),
+                    ProcessingResult::NewNode(node) => node,
+                    ProcessingResult::Error(error) => return Err(error),
+                },
+            }
+        };
+        nodes.push(new_node);
+    }
 }
 
 fn main() {
@@ -70,6 +285,9 @@ fn main() {
         print!("> ");
         std::io::stdout().flush().unwrap();
         std::io::stdin().read_line(&mut line).unwrap();
-        println!("{:?}", tag_contents(line.strip_suffix('\n').unwrap()));
+        println!(
+            "{:?}",
+            parse_sequential_nodes(line.strip_suffix('\n').unwrap())
+        );
     }
 }
