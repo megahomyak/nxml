@@ -1,71 +1,63 @@
-use std::{io::Write, ops::RangeFrom};
+use std::io::Write;
 
 use nom::{
     branch::alt,
     bytes::complete::{escaped, is_not, tag},
     character::complete::char as character,
     character::complete::one_of,
-    combinator::{eof, map, not},
-    error::ParseError,
+    combinator::{map, not, eof},
     multi::{many0, many1, many_till},
-    sequence::{delimited, pair, separated_pair},
-    Compare, IResult, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset, Slice, AsChar,
+    sequence::{delimited, separated_pair, pair},
+    IResult,
 };
 
 #[derive(Debug)]
-pub enum Node<Input> {
+pub enum Node<'a> {
     Tag {
-        name: Input,
-        contents: Option<Vec<Node<Input>>>,
+        name: &'a str,
+        contents: Option<Vec<Node<'a>>>,
     },
-    Text(Input),
+    Text(&'a str),
 }
 
-fn text<Input, Error>(s: Input) -> IResult<Input, Node<Input>, Error>
-where
-    Input: Clone
-        + Offset
-        + InputTake
-        + InputLength
-        + InputTakeAtPosition
-        + Slice<RangeFrom<usize>>
-        + InputIter,
-    <Input as InputIter>::Item: AsChar,
-    Error: ParseError<Input>,
-{
+fn text(mut s: &str) -> IResult<&str, Node<'_>> {
+    let cut = || {
+        let mut chars = s.chars();
+        let char = chars.next();
+        s = chars.as_str();
+        char
+    };
+
+    while let Some(char) = cut() {
+            match char {
+                '[' | ']' => unreachable!(),
+                '\\' => match char {
+                    ''
+                }
+            }
+    }
+
     map(escaped(is_not("\\[]"), '\\', one_of("\\[]")), |text| {
         Node::Text(text)
     })(s)
 }
 
-fn tag_name<Input: InputIter, Error: ParseError<Input>>(s: Input) -> IResult<Input, Input, Error> {
+fn tag_name(s: &str) -> IResult<&str, &str> {
     escaped(is_not("\\[]:"), '\\', one_of("\\[]:"))(s)
 }
 
-fn tag_without_contents<Input: InputIter, Error: ParseError<Input>>(
-    s: Input,
-) -> IResult<Input, Node<Input>, Error> {
+fn tag_without_contents(s: &str) -> IResult<&str, Node<'_>> {
     map(delimited(tag("["), tag_name, tag("]")), |name| Node::Tag {
         name,
         contents: None,
     })(s)
 }
 
-fn tag_contents<Input: InputIter, Error: ParseError<Input>>(
-    s: Input,
-) -> IResult<Input, Vec<Node<Input>>, Error> {
-    map(
-        many_till(alt((tag_without_contents, tag_with_contents, text)), eof),
-        |(nodes, _)| nodes,
-    )(s)
+fn tag_contents(s: &str) -> IResult<&str, Vec<Node>> {
+    map(many_till(alt((tag_without_contents, tag_with_contents, text)), eof), |(nodes, _)| nodes)(s)
 }
 
-fn tag_with_contents<
-    Input: InputIter + InputTake + Compare<&'static str>,
-    Error: ParseError<Input>,
->(
-    s: Input,
-) -> IResult<Input, Node<Input>, Error> {
+fn tag_with_contents(s: &str) -> IResult<&str, Node<'_>> {
     map(
         delimited(
             tag("["),
@@ -85,9 +77,6 @@ fn main() {
         print!("> ");
         std::io::stdout().flush().unwrap();
         std::io::stdin().read_line(&mut line).unwrap();
-        println!(
-            "{:?}",
-            tag_contents::<&str, nom::error::VerboseError<&str>>(line.strip_suffix('\n').unwrap())
-        );
+        println!("{:?}", tag_contents(line.strip_suffix('\n').unwrap()));
     }
 }
