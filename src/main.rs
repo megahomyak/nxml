@@ -3,11 +3,10 @@ use std::io::Write;
 use nom::{
     branch::alt,
     bytes::complete::{escaped, is_not, tag},
-    character::complete::char as character,
     character::complete::one_of,
-    combinator::{map, not, eof},
-    multi::{many0, many1, many_till},
-    sequence::{delimited, separated_pair, pair},
+    combinator::map,
+    multi::many0,
+    sequence::{delimited, separated_pair},
     IResult,
 };
 
@@ -21,12 +20,16 @@ pub enum Node<'a> {
 }
 
 fn text(s: &str) -> IResult<&str, Node<'_>> {
-    map(escaped(is_not("\\[]"), '\\', one_of("\\[]")), |text| {
+    let result = map(escaped(is_not("\\[]"), '\\', one_of("\\[]")), |text| {
         Node::Text(text)
-    })(s).map(|(rest, node)| if let Node::Text("") = node { nom::error::Error::new(rest, nom::error::ErrorKind::Fix) }) {
+    })(s);
+    match result {
         IResult::Ok((rest, node)) => match node {
-            Node::Text("") => nom::error::Error::new(rest, ),
-            _ => 
+            Node::Text("") => IResult::Err(nom::Err::Error(nom::error::Error::new(
+                rest,
+                nom::error::ErrorKind::NonEmpty,
+            ))),
+            _ => IResult::Ok((rest, node)),
         },
         IResult::Err(err) => IResult::Err(err),
     }
@@ -44,7 +47,7 @@ fn tag_without_contents(s: &str) -> IResult<&str, Node<'_>> {
 }
 
 fn tag_contents(s: &str) -> IResult<&str, Vec<Node>> {
-    map(many_till(alt((tag_without_contents, tag_with_contents, text)), eof), |(nodes, _)| nodes)(s)
+    many0(alt((tag_without_contents, tag_with_contents, text)))(s)
 }
 
 fn tag_with_contents(s: &str) -> IResult<&str, Node<'_>> {
