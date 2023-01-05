@@ -20,26 +20,16 @@ pub enum Node<'a> {
     Text(&'a str),
 }
 
-fn text(mut s: &str) -> IResult<&str, Node<'_>> {
-    let cut = || {
-        let mut chars = s.chars();
-        let char = chars.next();
-        s = chars.as_str();
-        char
-    };
-
-    while let Some(char) = cut() {
-            match char {
-                '[' | ']' => unreachable!(),
-                '\\' => match char {
-                    ''
-                }
-            }
-    }
-
+fn text(s: &str) -> IResult<&str, Node<'_>> {
     map(escaped(is_not("\\[]"), '\\', one_of("\\[]")), |text| {
         Node::Text(text)
-    })(s)
+    })(s).map(|(rest, node)| if let Node::Text("") = node { nom::error::Error::new(rest, nom::error::ErrorKind::Fix) }) {
+        IResult::Ok((rest, node)) => match node {
+            Node::Text("") => nom::error::Error::new(rest, ),
+            _ => 
+        },
+        IResult::Err(err) => IResult::Err(err),
+    }
 }
 
 fn tag_name(s: &str) -> IResult<&str, &str> {
