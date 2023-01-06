@@ -77,7 +77,7 @@ mod text {
         }
 
         let mut char_indices = input.char_indices().map(|(index, c)| (index, c.into()));
-        let mut index = match char_indices.next() {
+        match char_indices.next() {
             None => return ParsingResult::Err(ParsingError::StringIsEmpty),
             Some((_, Character::OpeningBracket)) => {
                 return ParsingResult::Err(ParsingError::StringStartsWithAnOpeningBracket)
@@ -107,7 +107,7 @@ mod text {
         };
         let mut text = String::new();
         loop {
-            index = match char_indices.next() {
+            match char_indices.next() {
                 None => return ok(text, "", ParsingError::StringIsEmpty),
                 Some((index, Character::ClosingBracket)) => {
                     return ok(
@@ -212,7 +212,13 @@ pub fn parse_sequential_nodes(mut input: &str) -> Result<Vec<Node>, ParsingError
                             text::ParsingError::StringIsEmpty => {
                                 ProcessingResult::Error(ParsingError::UnclosedBracket)
                             }
-                            text::ParsingError::StringStartsWithAColon => todo!("parse the body (THE NAME IS ALREADY PARSED AND IS NOT AN EMPTY STRING)"),
+                            text::ParsingError::StringStartsWithAColon => {
+        let contents = match parse_sequential_nodes(input) {
+            Ok(contents) => contents,
+            Err(error) => return ProcessingResult::Error(error),
+        };
+        ProcessingResult::NewNode(Node::Tag { name, contents: Some(contents) })
+    },
                             text::ParsingError::StringStartsWithAClosedBracket => {
                                 ProcessingResult::NewNode(Node::Tag {
                                     name,
@@ -223,7 +229,11 @@ pub fn parse_sequential_nodes(mut input: &str) -> Result<Vec<Node>, ParsingError
                     }
                     ParsingResult::Err(error) => match error {
                         text::ParsingError::StringStartsWithAColon => {
-                            todo!("parse the rest of the tag; there is NO NAME in this case (it's an empty string)")
+        let contents = match parse_sequential_nodes(input) {
+            Ok(contents) => contents,
+            Err(error) => return ProcessingResult::Error(error),
+        };
+        ProcessingResult::NewNode(Node::Tag { name: String::new(), contents: Some(contents) })
                         }
                         text::ParsingError::StringIsEmpty => {
                             ProcessingResult::Error(ParsingError::UnclosedBracket)
