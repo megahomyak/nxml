@@ -9,6 +9,7 @@ pub enum Node {
     Text(String),
 }
 
+#[derive(Debug)]
 pub enum ParsingResult<'a, T, E> {
     Ok {
         rest: &'a str,
@@ -53,6 +54,7 @@ mod text {
         }
     }
 
+    #[derive(Debug)]
     pub enum ParsingError {
         UnknownCharacterEscaped,
         EscapeCharacterIsAtTheEndOfTheString,
@@ -76,38 +78,43 @@ mod text {
             }
         }
 
-        let mut char_indices = input.char_indices().map(|(index, c)| (index, c.into()));
-        match char_indices.next() {
+        let mut char_indices = input
+            .char_indices()
+            .map(|(index, character)| (index, character.into()));
+        let mut text = String::from(match char_indices.next() {
             None => return ParsingResult::Err(ParsingError::StringIsEmpty),
-            Some((_, Character::OpeningBracket)) => {
-                return ParsingResult::Err(ParsingError::StringStartsWithAnOpeningBracket)
-            }
-            Some((_, Character::ClosingBracket)) => {
-                return ParsingResult::Err(ParsingError::StringStartsWithAClosedBracket)
-            }
-            Some((_, Character::Colon)) => {
-                return ParsingResult::Err(ParsingError::StringStartsWithAColon)
-            }
-            Some((_, Character::Escape)) => match char_indices.next() {
-                None => {
-                    return ParsingResult::Err(ParsingError::EscapeCharacterIsAtTheEndOfTheString)
+            Some((_index, character)) => match character {
+                Character::OpeningBracket => {
+                    return ParsingResult::Err(ParsingError::StringStartsWithAnOpeningBracket)
                 }
-                Some((
-                    index,
-                    Character::OpeningBracket
-                    | Character::ClosingBracket
-                    | Character::Colon
-                    | Character::Escape,
-                )) => index,
-                Some((_, Character::Other(_))) => {
-                    return ParsingResult::Err(ParsingError::UnknownCharacterEscaped)
+                Character::ClosingBracket => {
+                    return ParsingResult::Err(ParsingError::StringStartsWithAClosedBracket)
                 }
+                Character::Colon => {
+                    return ParsingResult::Err(ParsingError::StringStartsWithAColon)
+                }
+                Character::Escape => match char_indices.next() {
+                    None => {
+                        return ParsingResult::Err(
+                            ParsingError::EscapeCharacterIsAtTheEndOfTheString,
+                        )
+                    }
+                    Some((_index, character)) => match character {
+                        Character::OpeningBracket
+                        | Character::ClosingBracket
+                        | Character::Colon
+                        | Character::Escape => character.into(),
+                        Character::Other(_character) => {
+                            return ParsingResult::Err(ParsingError::UnknownCharacterEscaped)
+                        }
+                    },
+                },
+                Character::Other(character) => character,
             },
-            Some((index, _)) => index,
-        };
-        let mut text = String::new();
+        });
+
         loop {
-            match char_indices.next() {
+            text.push(match char_indices.next() {
                 None => return ok(text, "", ParsingError::StringIsEmpty),
                 Some((index, Character::ClosingBracket)) => {
                     return ok(
@@ -126,30 +133,25 @@ mod text {
                 Some((index, Character::Colon)) => {
                     return ok(text, &input[index..], ParsingError::StringStartsWithAColon)
                 }
-                Some((_, Character::Escape)) => match char_indices.next() {
+                Some((_index, Character::Escape)) => match char_indices.next() {
                     None => {
                         return ParsingResult::Err(
                             ParsingError::EscapeCharacterIsAtTheEndOfTheString,
                         )
                     }
                     Some((
-                        index,
-                        c @ (Character::ClosingBracket
+                        _index,
+                        character @ (Character::ClosingBracket
                         | Character::OpeningBracket
-                        | Character::Colon),
-                    )) => {
-                        text.push(c.into());
-                        index
-                    }
-                    Some((_, _)) => {
+                        | Character::Colon
+                        | Character::Escape),
+                    )) => character.into(),
+                    Some((_index, Character::Other(_character))) => {
                         return ParsingResult::Err(ParsingError::UnknownCharacterEscaped)
                     }
                 },
-                Some((index, c)) => {
-                    text.push(c.into());
-                    index
-                }
-            };
+                Some((_index, Character::Other(character))) => character,
+            });
         }
     }
 }
@@ -159,12 +161,13 @@ pub enum ParsingError {
     UnknownCharacterEscaped,
     UnclosedBracket,
     EscapeCharacterIsAtTheEndOfTheString,
-    UnexpectedClosingBracket,
-    UnexpectedColon,
+    UnpairedClosingBracket,
+    AColonIsNotPlacedImmediatelyAfterTagName,
     TagInsideTagName,
 }
 
 pub fn parse_sequential_nodes(mut input: &str) -> Result<Vec<Node>, ParsingError> {
+    #[derive(Debug)]
     enum ProcessingResult {
         ParsingIsDone,
         Error(ParsingError),
@@ -172,13 +175,16 @@ pub fn parse_sequential_nodes(mut input: &str) -> Result<Vec<Node>, ParsingError
     }
 
     fn process_error(error: text::ParsingError, input: &mut &str) -> ProcessingResult {
+        println!("{:?}, {:?}", error, input);
         match error {
             text::ParsingError::StringStartsWithAColon => {
-                return ProcessingResult::Error(ParsingError::UnexpectedColon)
+                return ProcessingResult::Error(
+                    ParsingError::AColonIsNotPlacedImmediatelyAfterTagName,
+                )
             }
             text::ParsingError::StringIsEmpty => ProcessingResult::ParsingIsDone,
             text::ParsingError::StringStartsWithAClosedBracket => {
-                return ProcessingResult::Error(ParsingError::UnexpectedClosingBracket)
+                return ProcessingResult::Error(ParsingError::UnpairedClosingBracket)
             }
             text::ParsingError::UnknownCharacterEscaped => {
                 return ProcessingResult::Error(ParsingError::UnknownCharacterEscaped)
@@ -213,12 +219,15 @@ pub fn parse_sequential_nodes(mut input: &str) -> Result<Vec<Node>, ParsingError
                                 ProcessingResult::Error(ParsingError::UnclosedBracket)
                             }
                             text::ParsingError::StringStartsWithAColon => {
-        let contents = match parse_sequential_nodes(input) {
-            Ok(contents) => contents,
-            Err(error) => return ProcessingResult::Error(error),
-        };
-        ProcessingResult::NewNode(Node::Tag { name, contents: Some(contents) })
-    },
+                                let contents = match parse_sequential_nodes(input) {
+                                    Ok(contents) => contents,
+                                    Err(error) => return ProcessingResult::Error(error),
+                                };
+                                ProcessingResult::NewNode(Node::Tag {
+                                    name,
+                                    contents: Some(contents),
+                                })
+                            }
                             text::ParsingError::StringStartsWithAClosedBracket => {
                                 ProcessingResult::NewNode(Node::Tag {
                                     name,
@@ -229,11 +238,14 @@ pub fn parse_sequential_nodes(mut input: &str) -> Result<Vec<Node>, ParsingError
                     }
                     ParsingResult::Err(error) => match error {
                         text::ParsingError::StringStartsWithAColon => {
-        let contents = match parse_sequential_nodes(input) {
-            Ok(contents) => contents,
-            Err(error) => return ProcessingResult::Error(error),
-        };
-        ProcessingResult::NewNode(Node::Tag { name: String::new(), contents: Some(contents) })
+                            let contents = match parse_sequential_nodes(input) {
+                                Ok(contents) => contents,
+                                Err(error) => return ProcessingResult::Error(error),
+                            };
+                            ProcessingResult::NewNode(Node::Tag {
+                                name: String::new(),
+                                contents: Some(contents),
+                            })
                         }
                         text::ParsingError::StringIsEmpty => {
                             ProcessingResult::Error(ParsingError::UnclosedBracket)
@@ -263,29 +275,26 @@ pub fn parse_sequential_nodes(mut input: &str) -> Result<Vec<Node>, ParsingError
 
     let mut nodes = Vec::new();
     loop {
-        let new_node = {
-            match text::parse_text(input) {
-                ParsingResult::Ok {
-                    rest,
-                    value,
-                    next_error,
-                } => {
-                    input = rest;
-                    match process_error(next_error, &mut input) {
-                        ProcessingResult::ParsingIsDone => return Ok(nodes),
-                        ProcessingResult::NewNode(node) => nodes.push(node),
-                        ProcessingResult::Error(error) => return Err(error),
-                    }
-                    Node::Text(value)
-                }
-                ParsingResult::Err(error) => match process_error(error, &mut input) {
+        match text::parse_text(input) {
+            ParsingResult::Ok {
+                rest,
+                value,
+                next_error,
+            } => {
+                input = rest;
+                nodes.push(Node::Text(value));
+                match process_error(next_error, &mut input) {
                     ProcessingResult::ParsingIsDone => return Ok(nodes),
-                    ProcessingResult::NewNode(node) => node,
+                    ProcessingResult::NewNode(node) => nodes.push(node),
                     ProcessingResult::Error(error) => return Err(error),
-                },
+                }
             }
+            ParsingResult::Err(error) => match process_error(error, &mut input) {
+                ProcessingResult::ParsingIsDone => return Ok(nodes),
+                ProcessingResult::NewNode(node) => nodes.push(node),
+                ProcessingResult::Error(error) => return Err(error),
+            },
         };
-        nodes.push(new_node);
     }
 }
 
