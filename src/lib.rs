@@ -1,133 +1,75 @@
-#[derive(Debug, PartialEq)]
 pub enum Node {
     Sequence(Vec<Node>),
     Text(String),
 }
 
-#[derive(Debug, PartialEq)]
 pub enum ParsingError {
-    EscapeCharacterEscapedNothing,
-    NonSpecialCharacterWasEscaped,
+    EscapeAtTheEndOfInput,
+    UnknownCharacterEscaped,
 }
 
-struct Rest<T>(pub T);
+pub struct Rest<T>(T);
 
-fn take_one_character(input: &str) -> Option<(char, Rest<&str>)> {
-    let chars = input.chars();
-    if let Some(c) = chars.next() {
-        Some((c, Rest(chars.as_str())))
-    } else {
-        None
-    }
-}
+mod text_character {
+    use super::*;
 
-enum SpecialCharacter {
-    SequenceOpener,
-    SequenceCloser,
-    TextTerminator,
-    SpecialCharacterEscaper,
-}
-
-impl SpecialCharacter {
-    fn new(c: char) -> Option<Self> {
-        match c {
-            '[' => Some(Self::SequenceOpener),
-            ']' => Some(Self::SequenceCloser),
-            '|' => Some(Self::TextTerminator),
-            '\\' => Some(Self::SpecialCharacterEscaper),
-            _ => None
-        }
-    }
-}
-
-mod special_character {
-    use super::{Rest, take_one_character};
-
-    pub enum Error {
-        InputEnded,
-        SpecialCharacterNotFound,
+    pub enum RecoverableError {
+        NoMoreText,
     }
 
-    pub enum Chars {
-        
+    pub enum UnrecoverableError {
+        EscapeAtTheEndOfInput,
+        UnknownCharacterEscaped,
     }
 
-    pub fn parse(input: &str) -> Result<Rest<&str>, Error> {
-        take_one_character(input).map(|c, Rest(input)| )
-    }
-}
-
-fn parse_text_without_escaping(input: &str) -> (&str, Option<SpecialCharacter>, &str) {
-    let mut char_indices = input.char_indices();
-    while let Some((index, c)) = char_indices.next() {
-        if let Some(c) = SpecialCharacter::new(c) {
-            return (&input[..index], Some(c), char_indices.as_str());
-        }
-    }
-    (input, None, char_indices.as_str())
-}
-
-fn parse_text(input: &str) -> Result<(Option<String>, Option<char>, &str), ParsingError> {
-    let mut text = String::new();
-    let mut chars = input.chars();
-    loop {
-    let character = loop {
+    pub fn parse(
+        input: &str,
+    ) -> Result<Result<(char, Rest<&str>), RecoverableError>, UnrecoverableError> {
+        let mut chars = input.chars();
         match chars.next() {
-            None => ,
-            Some(c) => 
+            None => Ok(Err(RecoverableError::NoMoreText)),
+            Some(c) => match c {
+                '|' | '[' | ']' => Ok(Err(RecoverableError::NoMoreText)),
+                '\\' => match chars.next() {
+                    Some(c @ ('|' | '\\' | '[' | ']')) => Ok(Ok((c, Rest(chars.as_str())))),
+                    Some(_) => Err(UnrecoverableError::UnknownCharacterEscaped),
+                    None => Err(UnrecoverableError::EscapeAtTheEndOfInput),
+                },
+                _ => Ok(Ok((c, Rest(chars.as_str())))),
+            },
         }
     }
-    }
-    while let Some(c) = chars.next() {
-        if let Some()
-        match SpecialCharacter::new(c) {
-            None => (),
-            Some()
-        }
-        if c == '\\' {
-            match chars.next() {
-                None => return Err(ParsingError::EscapeCharacterEscapedNothing),
-                Some(c) => match SpecialCharacter::new(c) {
-                    None => return Err(ParsingError::NonSpecialCharacterWasEscaped),
-                    Some(_) => ,
+}
+
+mod text {
+    use super::*;
+    use text_character::{RecoverableError, UnrecoverableError};
+
+    pub fn parse(
+        mut input: &str,
+    ) -> Result<Result<(String, Rest<&str>), RecoverableError>, UnrecoverableError> {
+        let mut result = String::new();
+        loop {
+            match text_character::parse(input) {
+                Ok((c, rest)) => {
+                    result.push(c);
+                    input = rest.0;
                 }
+                Err(error @ text_character::Error::NoMoreText) => {
+                    if result.is_empty() {
+                        return Err(error);
+                    } else {
+                        result.shrink_to_fit();
+                        return Ok((result, Rest(input)));
+                    }
+                }
+                Err(e) => return Err(e),
             }
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum SpecialCharacter {
-    OpeningBracket,
-    ClosingBracket,
-    VerticalBar,
-    EscapeCharacter,
-}
-
-impl SpecialCharacter {
-    fn new(c: char) -> Option<Self> {
-        match c {
-            '\\' => Some(Self::EscapeCharacter),
-            '[' => Some(Self::OpeningBracket),
-            ']' => Some(Self::ClosingBracket),
-            '|' => Some(Self::VerticalBar),
-            _ => None,
-        }
-    }
-}
-
-fn parse_object(input: &str) -> Result<(Node, Option<SpecialCharacter>, &str), ParsingError> {
-    let (text, c, rest) = parse_text(input);
-}
-
-pub fn parse_sequential_nodes(input: &str) -> Result<Vec<Node>, ParsingError> {
-    let (text, c, rest) = parse_text(input);
-    match c {
-        None => if !text.is_empty() {},
-        Some(_) => (),
-    }
-    todo!()
-}
+mod node {}
 
 #[cfg(test)]
 mod tests {
@@ -146,22 +88,37 @@ mod tests {
             parse_sequential_nodes(
                 r#"text[first sequence item|second sequence item[subsequence]|third sequence item[]with an empty in-between sequence]"#
             ),
-            todo!()
+            vec![
+                text("text"),
+                seq(vec![
+                    text("first sequence item"),
+                    text("second sequence item"),
+                    vec(seq![text("subsequence")]),
+                    text("third sequence item"),
+                    seq(vec![]),
+                    text("with an empty in-between sequence")
+                ])
+            ]
         );
         assert_eq!(
             parse_sequential_nodes(r#"[some vertical bars: \|\|\|][some brackets: \]\[\[\]]"#),
-            Ok(vec![seq(vec![text(r#"some vertical bars: |||"#)]), seq(vec![text(r#"some brackets: ][[]"#)])])
+            Ok(vec![
+                seq(vec![text(r#"some vertical bars: |||"#)]),
+                seq(vec![text(r#"some brackets: ][[]"#)])
+            ])
         );
         assert_eq!(
             parse_sequential_nodes(r#"first text node|second text node"#),
             Ok(vec![text("first text node"), text("second text node")])
         );
 
-
         assert_eq!(
             parse_sequential_nodes(r#"[|a[]]|[a||b]"#),
-            Ok(vec![seq(vec![text(""), text(""), seq(vec![])]), seq(vec![text("a"), text(""),])])
-            );
-        todo!("check for errors");
+            Ok(vec![
+                seq(vec![text(""), text("a"), seq(vec![])]),
+                seq(vec![text("a"), text(""), text("b")])
+            ])
+        );
+        todo!("check error cases");
     }
 }
