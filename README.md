@@ -17,7 +17,7 @@ NXML is a markup language that is **not XML**. It was based on XML, but went in 
     text ::= text text_character | text_character
     sequence_of_nodes ::= sequence_of_nodes node | node
     empty_text ::= "|"
-    node ::= text | text + "|" | "[" + sequence_of_nodes + "]" | empty_text
+    node ::= text | text + "|" | "[" + sequence_of_nodes + "]" | "[]" | empty_text
 
 ## Syntax example
 

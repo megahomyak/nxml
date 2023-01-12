@@ -12,8 +12,23 @@ pub enum ParsingError {
 
 struct Rest<T>(pub T);
 
-fn take_one_character(input: &str) -> Option<(char, Rest<&str>)> {
-    let chars = input.chars();
+fn split_until<'a>(input: &'a str, checker: impl FnMut(char) -> bool) -> (&'a str, Rest<&'a str>) {
+    let mut char_indices = input.char_indices();
+    let mut old_index = 0;
+    loop {
+        if let Some((new_index, c)) = char_indices.next() {
+            if !checker(c) {
+                return (&input[..old_index], Rest(&input[old_index..]));
+            }
+            old_index = new_index;
+        } else {
+            return (input, Rest(""));
+        }
+    }
+}
+
+fn take_first_character(input: &str) -> Option<(char, Rest<&str>)> {
+    let mut chars = input.chars();
     if let Some(c) = chars.next() {
         Some((c, Rest(chars.as_str())))
     } else {
@@ -21,112 +36,93 @@ fn take_one_character(input: &str) -> Option<(char, Rest<&str>)> {
     }
 }
 
-enum SpecialCharacter {
-    SequenceOpener,
-    SequenceCloser,
-    TextTerminator,
-    SpecialCharacterEscaper,
+fn take_last_character(input: &str) -> Option<(char, Rest<&str>)> {
+    let mut chars = input.chars();
+    if let Some(c) = chars.next_back() {
+        Some((c, Rest(chars.as_str())))
+    } else {
+        None
+    }
 }
 
-impl SpecialCharacter {
-    fn new(c: char) -> Option<Self> {
-        match c {
-            '[' => Some(Self::SequenceOpener),
-            ']' => Some(Self::SequenceCloser),
-            '|' => Some(Self::TextTerminator),
-            '\\' => Some(Self::SpecialCharacterEscaper),
-            _ => None
-        }
+fn take_matching<'a>(input: &'a str, sample: &'static str) -> Option<(&'a str, Rest<&'a str>)> {
+    if input.starts_with(sample) {
+        Some((&input[..sample.len()], Rest(&input[sample.len()..])))
+    } else {
+        None
     }
 }
 
 mod special_character {
-    use super::{Rest, take_one_character};
+    use super::*;
 
     pub enum Error {
         InputEnded,
-        SpecialCharacterNotFound,
+        WrongCharacter,
     }
 
-    pub enum Chars {
-        
-    }
-
-    pub fn parse(input: &str) -> Result<Rest<&str>, Error> {
-        take_one_character(input).map(|c, Rest(input)| )
-    }
-}
-
-fn parse_text_without_escaping(input: &str) -> (&str, Option<SpecialCharacter>, &str) {
-    let mut char_indices = input.char_indices();
-    while let Some((index, c)) = char_indices.next() {
-        if let Some(c) = SpecialCharacter::new(c) {
-            return (&input[..index], Some(c), char_indices.as_str());
-        }
-    }
-    (input, None, char_indices.as_str())
-}
-
-fn parse_text(input: &str) -> Result<(Option<String>, Option<char>, &str), ParsingError> {
-    let mut text = String::new();
-    let mut chars = input.chars();
-    loop {
-    let character = loop {
-        match chars.next() {
-            None => ,
-            Some(c) => 
-        }
-    }
-    }
-    while let Some(c) = chars.next() {
-        if let Some()
-        match SpecialCharacter::new(c) {
-            None => (),
-            Some()
-        }
-        if c == '\\' {
-            match chars.next() {
-                None => return Err(ParsingError::EscapeCharacterEscapedNothing),
-                Some(c) => match SpecialCharacter::new(c) {
-                    None => return Err(ParsingError::NonSpecialCharacterWasEscaped),
-                    Some(_) => ,
+    pub fn parse(input: &str) -> Result<(char, Rest<&str>), Error> {
+        take_first_character(input)
+            .ok_or(Error::InputEnded)
+            .and_then(|(c, rest)| {
+                if "[]|\\".contains(c) {
+                    Ok((c, rest))
+                } else {
+                    Err(Error::WrongCharacter)
                 }
+            })
+    }
+}
+
+mod text_character {
+    use super::*;
+
+    pub enum Error {
+        InputEnded,
+        UnknownCharacterEscaped,
+        SpecialCharacterEncountered,
+        EscapeAtTheEndOfInput,
+    }
+
+    pub fn parse(input: &str) -> Result<(char, Rest<&str>), Error> {
+        fn escaped<'a>(
+            input: &'a str,
+            sample: &'static str,
+        ) -> Result<(char, Rest<&'a str>), Error> {
+            take_matching(input, sample)
+                .map(|(s, rest)| ((take_last_character(s).unwrap()).0, rest))
+                .ok_or(Error::InputEnded)
+        }
+
+        take_first_character(input).and_then(|(c, rest)| {
+            if c == '\\' {
+                match take_first_character(rest.0) {
+                    None => Err(Error::EscapeAtTheEndOfInput),
+                    Some((c, rest)) => match c {
+                        ''
+                    }
+                }
+                take_first_character(rest.0)
+                    .ok_or_else(|(c, rest)| if "\\[]|".contains(c) { Ok((c, rest)) } else { Err(Error::UnknownCharacterEscaped) })
+            } else {
+                Ok((c, rest))
             }
+        });
+
+        escaped(input, "\\\\")
+            .or_else(|_err| escaped(input, "\\["))
+            .or_else(|_err| escaped(input, "\\]"))
+            .or_else(|_err| escaped(input, "\\|"))
+            .or_else(|_err| {
+                if special_character::parse(input).is_ok() {
+                    Err(Error::SpecialCharacterEncountered)
+                }
+            });
+        if special_character::parse(input).is_ok() {
+            Err(Error::SpecialCharacterEncountered)
+        } else {
         }
     }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum SpecialCharacter {
-    OpeningBracket,
-    ClosingBracket,
-    VerticalBar,
-    EscapeCharacter,
-}
-
-impl SpecialCharacter {
-    fn new(c: char) -> Option<Self> {
-        match c {
-            '\\' => Some(Self::EscapeCharacter),
-            '[' => Some(Self::OpeningBracket),
-            ']' => Some(Self::ClosingBracket),
-            '|' => Some(Self::VerticalBar),
-            _ => None,
-        }
-    }
-}
-
-fn parse_object(input: &str) -> Result<(Node, Option<SpecialCharacter>, &str), ParsingError> {
-    let (text, c, rest) = parse_text(input);
-}
-
-pub fn parse_sequential_nodes(input: &str) -> Result<Vec<Node>, ParsingError> {
-    let (text, c, rest) = parse_text(input);
-    match c {
-        None => if !text.is_empty() {},
-        Some(_) => (),
-    }
-    todo!()
 }
 
 #[cfg(test)]
@@ -150,18 +146,23 @@ mod tests {
         );
         assert_eq!(
             parse_sequential_nodes(r#"[some vertical bars: \|\|\|][some brackets: \]\[\[\]]"#),
-            Ok(vec![seq(vec![text(r#"some vertical bars: |||"#)]), seq(vec![text(r#"some brackets: ][[]"#)])])
+            Ok(vec![
+                seq(vec![text(r#"some vertical bars: |||"#)]),
+                seq(vec![text(r#"some brackets: ][[]"#)])
+            ])
         );
         assert_eq!(
             parse_sequential_nodes(r#"first text node|second text node"#),
             Ok(vec![text("first text node"), text("second text node")])
         );
 
-
         assert_eq!(
             parse_sequential_nodes(r#"[|a[]]|[a||b]"#),
-            Ok(vec![seq(vec![text(""), text(""), seq(vec![])]), seq(vec![text("a"), text(""),])])
-            );
+            Ok(vec![
+                seq(vec![text(""), text(""), seq(vec![])]),
+                seq(vec![text("a"), text(""),])
+            ])
+        );
         todo!("check for errors");
     }
 }
