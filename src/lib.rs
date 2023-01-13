@@ -5,7 +5,7 @@ pub enum Node {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Rest<T>(T);
+pub struct Rest<T>(pub T);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Position {
