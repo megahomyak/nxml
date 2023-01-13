@@ -144,7 +144,7 @@ pub mod sequence_of_nodes {
 pub mod node {
     use super::*;
 
-    pub(crate) fn parse(input: parco::PositionedString<'_>) -> ParsingResult<'_, Node> {
+    pub(crate) fn parse(input: parco::PositionedString) -> ParsingResult<Node> {
         text::parse(input).map(|text| Node::Text(text)).or(|| {
             parco::one_matching_part(input, |c| *c == '[').and(|(_c, rest)| {
                 parco::one_matching_part(rest.0, |c| *c == ']')
