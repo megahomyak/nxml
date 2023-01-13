@@ -115,10 +115,10 @@ mod inner {
 
         pub fn map<O>(
             self,
-            f: impl FnOnce((T, Rest<Input<'a>>)) -> (O, Rest<Input<'a>>),
+            f: impl FnOnce(T) -> O,
         ) -> ParsingResult<'a, O> {
             match self {
-                Self::Ok((value, rest)) => ParsingResult::Ok(f((value, rest))),
+                Self::Ok((value, rest)) => ParsingResult::Ok((f(value), rest)),
                 Self::Err => ParsingResult::Err,
                 Self::Fatal(fatal) => ParsingResult::Fatal(fatal),
             }
@@ -242,15 +242,15 @@ mod inner {
 
         pub fn parse(input: Input<'_>) -> PR<'_, Node> {
             text::parse(input)
-                .map(|(text, input)| (Node::Text(text), input))
+                .map(|text| Node::Text(text))
                 .or(|| {
                     matches(input, '[').and(|(_c, rest)| {
                         matches(rest.0, ']')
-                            .map(|(_c, input)| (Node::Sequence(vec![]), input))
+                            .map(|_c| Node::Sequence(vec![]))
                             .or(|| {
                                 sequence_of_nodes::parse(rest.0).and(|(nodes, input)| {
                                     matches(input.0, ']')
-                                        .map(|(_c, input)| (Node::Sequence(nodes), input))
+                                        .map(|_c| Node::Sequence(nodes))
                                 })
                             })
                             .or(|| PR::Fatal(FatalError::UnclosedBracket { pos: input.pos }))
