@@ -10,7 +10,7 @@ NXML is a markup language that is **not XML**. It was based on XML, but went in 
 * A vertical bar (`|`) denotes the end of a text node (otherwise text nodes end at the end of input or at a sequence boundary (a bracket)). This can be used to place text nodes one after another or to create an empty text node
 * Every special character (`|`, `[`, `]` or `\`) can be escaped with a backslash (`\`)
 
-## Syntax grammar (in pseudo-Backus-Naur Form)
+## Syntax grammar (in pseudo-Backus-Naur Form; may be invalid)
 
     special_character ::= "[" | "]" | "|" | "\\"
     text_character ::= !special_character | "\\\\" | "\\[" | "\\]" | "\\|"
