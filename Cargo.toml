@@ -11,4 +11,4 @@ repository = "https://github.com/megahomyak/nxml"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-parco = { path = "../parco" }
+parco = "1.0.0"
