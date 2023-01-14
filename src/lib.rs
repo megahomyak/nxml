@@ -120,7 +120,7 @@ mod text {
     }
 }
 
-pub mod sequence_of_nodes {
+mod sequence_of_nodes {
     use super::*;
 
     pub(crate) fn parse(mut input: parco::PositionedString) -> ParsingResult<Vec<Node>> {
@@ -141,7 +141,7 @@ pub mod sequence_of_nodes {
     }
 }
 
-pub mod node {
+mod node {
     use super::*;
 
     pub(crate) fn parse(input: parco::PositionedString) -> ParsingResult<Node> {
