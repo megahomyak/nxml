@@ -1,6 +1,6 @@
 [package]
 name = "nxml"
-version = "1.0.4"
+version = "1.1.0"
 edition = "2021"
 description = "A parser for NXML (NXML is not XML!)"
 license = "MIT"
@@ -12,3 +12,4 @@ repository = "https://github.com/megahomyak/nxml"
 
 [dependencies]
 parco = "1.0.0"
+thiserror = "1.0.38"

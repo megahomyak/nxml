@@ -1,14 +1,20 @@
+use thiserror::Error;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Node {
     Sequence(Vec<Node>),
     Text(String),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Error)]
 pub enum Error {
+    #[error("there was a escaping character at the end of the input string")]
     EscapeAtTheEndOfInput,
+    #[error("a character that is not escapable escaped at {pos:?}")]
     UnknownCharacterEscaped { pos: parco::Position },
+    #[error("a bracket was not closed. The opening bracket is at {pos:?}")]
     UnclosedBracket { pos: parco::Position },
+    #[error("an unexpected closing bracket (it does not have a corresponding opening bracket) appeared at {pos:?}")]
     UnexpectedClosingBracket { pos: parco::Position },
 }
 
