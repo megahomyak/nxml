@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn test_immediate_unclosed_bracket_detection_with_one_node_parsing() {
         assert_eq!(
-            parse_one_node(r#"["#),
+            parse_one_node(r#"[abcd"#),
             Err(Error::UnclosedBracket {
                 pos: parco::Position { col: 1, row: 1 }
             })
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn test_unclosed_bracket_detection_after_a_new_line() {
         assert_eq!(
-            parse_sequential_nodes("\n["),
+            parse_sequential_nodes("\n[abcd"),
             Err(Error::UnclosedBracket {
                 pos: parco::Position { col: 1, row: 2 }
             })
@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn test_unclosed_bracket_detection() {
         assert_eq!(
-            parse_sequential_nodes(r#"a[b"#),
+            parse_sequential_nodes(r#"a[bcd"#),
             Err(Error::UnclosedBracket {
                 pos: parco::Position { col: 2, row: 1 }
             })
