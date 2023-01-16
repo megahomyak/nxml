@@ -39,6 +39,24 @@ pub enum Node {
     Text(String),
 }
 
+impl Node {
+    pub fn sequence(&self) -> Option<&Vec<Self>> {
+        if let Self::Sequence(sequence) = self {
+            Some(sequence)
+        } else {
+            None
+        }
+    }
+
+    pub fn text(&self) -> Option<&String> {
+        if let Self::Text(text) = self {
+            Some(text)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum Error {
     #[error("there was a escaping character at the end of the input string")]
