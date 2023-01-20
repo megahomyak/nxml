@@ -117,6 +117,11 @@ impl From<FatalError> for Error {
     }
 }
 
+#[cfg(feature = "serde")]
+mod deserializer {
+    impl serde::Deserializer for super::Node {}
+}
+
 mod text_character {
     use super::*;
 

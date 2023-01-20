@@ -12,4 +12,8 @@ repository = "https://github.com/megahomyak/nxml"
 
 [dependencies]
 parco = "1.0.0"
+serde = { version = "1.0.152", optional = true }
 thiserror = "1.0.38"
+
+[features]
+serde = ["dep:serde"]
