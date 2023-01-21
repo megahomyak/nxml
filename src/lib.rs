@@ -1,112 +1,6 @@
-use std::{borrow::Borrow, collections::HashMap};
+use std::collections::HashMap;
 
 use thiserror::Error;
-
-pub struct FieldsIter<I> {
-    iter: I,
-}
-
-pub struct TextsIter<I> {
-    iter: I,
-}
-
-pub struct SequenceIter<I> {
-    iter: I,
-}
-
-pub trait NodeUtils: Sized {
-    fn texts(&self) -> TextsIter<Self>;
-    fn sequences(&self) -> SequenceIter<Self>;
-}
-
-impl NodeUtils for Vec<Node> {
-    fn texts(&self) -> TextsIter<Self> {
-        TextsIter { iter: self }
-    }
-}
-
-pub trait NodeGetters {
-    type Text;
-    type Sequence;
-
-    fn text(self) -> Option<Self::Text>;
-    fn sequence(self) -> Option<Self::Sequence>;
-}
-
-macro_rules! node_getters {
-    () => {
-        fn text(self) -> Option<<Self as NodeGetters>::Text> {
-            if let Node::Text(t) = self {
-                Some(t)
-            } else {
-                None
-            }
-        }
-
-        fn sequence(self) -> Option<<Self as NodeGetters>::Sequence> {
-            if let Node::Sequence(s) = self {
-                Some(s)
-            } else {
-                None
-            }
-        }
-    };
-}
-
-impl NodeGetters for Node {
-    type Text = String;
-    type Sequence = Vec<Node>;
-
-    node_getters!();
-}
-
-impl<'a> NodeGetters for &'a Node {
-    type Text = &'a str;
-    type Sequence = &'a [Node];
-
-    node_getters!();
-}
-
-impl<'a> NodeGetters for &'a mut Node {
-    type Text = &'a str;
-    type Sequence = &'a [Node];
-
-    node_getters!();
-}
-
-impl<G: NodeGetters, I: Iterator<Item = G>> Iterator for TextsIter<I> {
-    type Item = G::Text;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(node) = self.iter.next() {
-            match node.text() {
-                text @ Some(_) => return text,
-                None => (),
-            }
-        }
-        None
-    }
-}
-
-impl<G: NodeGetters, I: Iterator<Item = G>> Iterator for SequenceIter<I> {
-    type Item = G::Sequence;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match self.iter.next() {
-                Some(node) => match node.sequence() {
-                    sequence @ Some(_) => return sequence,
-                    None => (),
-                },
-                None => return None,
-            }
-        }
-    }
-}
-
-impl<G: NodeGetters, I: Iterator<Item = G>> Iterator for FieldsIter<I> {
-    type Item = (G::Text, G::Sequence);
-}
 
 pub fn fields<'a>(iter: impl Iterator<Item = &'a Node>) -> HashMap<&'a str, &'a [Node]> {
     let mut fields = HashMap::new();
@@ -143,6 +37,24 @@ pub fn sequences<'a>(iter: impl Iterator<Item = &'a Node>) -> impl Iterator<Item
 pub enum Node {
     Sequence(Vec<Node>),
     Text(String),
+}
+
+impl Node {
+    pub fn sequence(&self) -> Option<&Vec<Self>> {
+        if let Self::Sequence(sequence) = self {
+            Some(sequence)
+        } else {
+            None
+        }
+    }
+
+    pub fn text(&self) -> Option<&String> {
+        if let Self::Text(text) = self {
+            Some(text)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Error)]
