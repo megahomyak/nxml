@@ -8,7 +8,7 @@ pub enum Node {
 
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum Error {
-    #[error("there was a escaping character at the end of the input string")]
+    #[error("there was an escaping character at the end of the input string")]
     EscapeAtTheEndOfInput,
     #[error("a character that is not escapable escaped at {pos:?}")]
     UnknownCharacterEscaped { pos: parco::Position },
