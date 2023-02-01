@@ -209,11 +209,12 @@ mod tests {
     #[test]
     fn test_escaping() {
         assert_eq!(
-            parse_sequential_nodes(r#"[some vertical bars: \|\|\|][some brackets: \]\[\[\]]"#),
+            parse_sequential_nodes(r#"[some vertical bars: \|\|\|][some brackets: \]\[\[\]][some backslashes: \\ \\ \\]"#),
             Ok(Sequence {
                 contents: vec![
                     seq(vec![text(r#"some vertical bars: |||"#)]),
-                    seq(vec![text(r#"some brackets: ][[]"#)])
+                    seq(vec![text(r#"some brackets: ][[]"#)]),
+                    seq(vec![text(r#"some backslashes: \ \ \"#)]),
                 ]
             })
         );
