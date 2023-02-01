@@ -1,13 +1,8 @@
 use thiserror::Error;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Sequence {
-    pub contents: Vec<Node>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
 pub enum Node {
-    Sequence(Sequence),
+    Sequence(Vec<Node>),
     Text(String),
 }
 
@@ -35,7 +30,7 @@ pub fn parse_one_node(
     }
 }
 
-pub fn parse_sequential_nodes(input: &str) -> Result<Sequence, Error> {
+pub fn parse_sequential_nodes(input: &str) -> Result<Vec<Node>, Error> {
     match sequence_of_nodes::parse(input.into()) {
         ParsingResult::Ok((nodes, rest)) => {
             if rest.0.src().is_empty() {
@@ -44,7 +39,7 @@ pub fn parse_sequential_nodes(input: &str) -> Result<Sequence, Error> {
                 Err(Error::UnexpectedClosingBracket { pos: rest.0.pos() })
             }
         }
-        ParsingResult::Err => Ok(Sequence { contents: vec![] }),
+        ParsingResult::Err => Ok(vec![]),
         ParsingResult::Fatal(e) => Err(match e {
             FatalError::UnclosedBracket { pos } => Error::UnclosedBracket { pos },
             FatalError::EscapeAtTheEndOfInput => Error::EscapeAtTheEndOfInput,
@@ -134,13 +129,13 @@ mod text {
 mod sequence_of_nodes {
     use super::*;
 
-    pub(crate) fn parse(mut input: parco::PositionedString) -> ParsingResult<Sequence> {
+    pub(crate) fn parse(mut input: parco::PositionedString) -> ParsingResult<Vec<Node>> {
         let mut nodes = Vec::new();
         loop {
             match node::parse(input) {
                 parco::Result::Err => {
                     nodes.shrink_to_fit();
-                    return parco::Result::Ok((Sequence { contents: nodes }, parco::Rest(input)));
+                    return parco::Result::Ok((nodes, parco::Rest(input)));
                 }
                 parco::Result::Ok((node, rest)) => {
                     input = rest.0;
@@ -159,7 +154,7 @@ mod node {
         text::parse(input).map(|text| Node::Text(text)).or(|| {
             parco::one_matching_part(input, |c| *c == '[').and(|(_c, rest)| {
                 parco::one_matching_part(rest.0, |c| *c == ']')
-                    .map(|_c| Node::Sequence(Sequence { contents: vec![] }))
+                    .map(|_c| Node::Sequence(vec![]))
                     .or(|| {
                         sequence_of_nodes::parse(rest.0).and(|(nodes, input)| {
                             parco::one_matching_part(input.0, |c| *c == ']')
@@ -179,8 +174,8 @@ mod tests {
     fn text(s: &'static str) -> Node {
         Node::Text(String::from(s))
     }
-    fn seq(contents: Vec<Node>) -> Node {
-        Node::Sequence(Sequence { contents })
+    fn seq(s: Vec<Node>) -> Node {
+        Node::Sequence(s)
     }
 
     #[test]
@@ -189,34 +184,32 @@ mod tests {
             parse_sequential_nodes(
                 r#"text[first sequence item|second sequence item[subsequence]|third sequence item[]with an empty in-between sequence]"#
             ),
-            Ok(Sequence {
-                contents: vec![
-                    text("text"),
-                    seq(vec![
-                        text("first sequence item"),
-                        text("second sequence item"),
-                        seq(vec![text("subsequence")]),
-                        text(""),
-                        text("third sequence item"),
-                        seq(vec![]),
-                        text("with an empty in-between sequence")
-                    ])
-                ]
-            })
+            Ok(vec![
+                text("text"),
+                seq(vec![
+                    text("first sequence item"),
+                    text("second sequence item"),
+                    seq(vec![text("subsequence")]),
+                    text(""),
+                    text("third sequence item"),
+                    seq(vec![]),
+                    text("with an empty in-between sequence")
+                ])
+            ])
         );
     }
 
     #[test]
     fn test_escaping() {
         assert_eq!(
-            parse_sequential_nodes(r#"[some vertical bars: \|\|\|][some brackets: \]\[\[\]][some backslashes: \\ \\ \\]"#),
-            Ok(Sequence {
-                contents: vec![
-                    seq(vec![text(r#"some vertical bars: |||"#)]),
-                    seq(vec![text(r#"some brackets: ][[]"#)]),
-                    seq(vec![text(r#"some backslashes: \ \ \"#)]),
-                ]
-            })
+            parse_sequential_nodes(
+                r#"[some vertical bars: \|\|\|][some brackets: \]\[\[\]][some backslashes: \\ \\ \\]"#
+            ),
+            Ok(vec![
+                seq(vec![text(r#"some vertical bars: |||"#)]),
+                seq(vec![text(r#"some brackets: ][[]"#)]),
+                seq(vec![text(r#"some backslashes: \ \ \"#)]),
+            ])
         );
     }
 
@@ -224,9 +217,7 @@ mod tests {
     fn test_parsing_two_text_nodes() {
         assert_eq!(
             parse_sequential_nodes(r#"first text node|second text node"#),
-            Ok(Sequence {
-                contents: vec![text("first text node"), text("second text node")]
-            })
+            Ok(vec![text("first text node"), text("second text node")])
         );
     }
 
@@ -234,22 +225,17 @@ mod tests {
     fn test_parsing_complicated_input() {
         assert_eq!(
             parse_sequential_nodes(r#"[|a[]]|[a||b]"#),
-            Ok(Sequence {
-                contents: vec![
-                    seq(vec![text(""), text("a"), seq(vec![])]),
-                    text(""),
-                    seq(vec![text("a"), text(""), text("b")])
-                ]
-            })
+            Ok(vec![
+                seq(vec![text(""), text("a"), seq(vec![])]),
+                text(""),
+                seq(vec![text("a"), text(""), text("b")])
+            ])
         );
     }
 
     #[test]
     fn test_parsing_empty_input() {
-        assert_eq!(
-            parse_sequential_nodes(r#""#),
-            Ok(Sequence { contents: vec![] })
-        );
+        assert_eq!(parse_sequential_nodes(r#""#), Ok(vec![]));
     }
 
     #[test]
@@ -306,12 +292,7 @@ mod tests {
 
     #[test]
     fn test_parsing_only_a_text_terminator() {
-        assert_eq!(
-            parse_sequential_nodes(r#"|"#),
-            Ok(Sequence {
-                contents: vec![text("")]
-            })
-        );
+        assert_eq!(parse_sequential_nodes(r#"|"#), Ok(vec![text("")]));
     }
 
     #[test]
