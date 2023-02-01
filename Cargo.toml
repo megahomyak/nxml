@@ -1,6 +1,6 @@
 [package]
 name = "nxml"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 description = "A parser for NXML (NXML is not XML!)"
 license = "MIT"
