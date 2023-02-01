@@ -1,60 +1,9 @@
-use std::collections::HashMap;
-
 use thiserror::Error;
-
-pub fn fields<'a>(iter: impl Iterator<Item = &'a Node>) -> HashMap<&'a str, &'a [Node]> {
-    let mut fields = HashMap::new();
-    for sequence in sequences(iter) {
-        let mut iter = sequence.iter();
-        if let Some(Node::Text(text)) = iter.next() {
-            fields.insert(text.as_str(), iter.as_slice());
-        }
-    }
-    fields
-}
-
-pub fn texts<'a>(iter: impl Iterator<Item = &'a Node>) -> impl Iterator<Item = &'a str> {
-    iter.filter_map(|node| {
-        if let Node::Text(text) = node {
-            Some(text.as_str())
-        } else {
-            None
-        }
-    })
-}
-
-pub fn sequences<'a>(iter: impl Iterator<Item = &'a Node>) -> impl Iterator<Item = &'a Vec<Node>> {
-    iter.filter_map(|node| {
-        if let Node::Sequence(sequence) = node {
-            Some(sequence)
-        } else {
-            None
-        }
-    })
-}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Node {
     Sequence(Vec<Node>),
     Text(String),
-}
-
-impl Node {
-    pub fn sequence(&self) -> Option<&Vec<Self>> {
-        if let Self::Sequence(sequence) = self {
-            Some(sequence)
-        } else {
-            None
-        }
-    }
-
-    pub fn text(&self) -> Option<&String> {
-        if let Self::Text(text) = self {
-            Some(text)
-        } else {
-            None
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Error)]
