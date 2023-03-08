@@ -129,20 +129,14 @@ mod text {
 mod sequence_of_nodes {
     use super::*;
 
-    pub(crate) fn parse(mut input: parco::PositionedString) -> ParsingResult<Vec<Node>> {
-        let mut nodes = Vec::new();
-        loop {
-            match node::parse(input) {
-                parco::Result::Err => {
-                    nodes.shrink_to_fit();
-                    return parco::Result::Ok((nodes, parco::Rest(input)));
-                }
-                parco::Result::Ok((node, rest)) => {
-                    input = rest.0;
-                    nodes.push(node);
-                }
-                parco::Result::Fatal(e) => return parco::Result::Fatal(e),
-            }
+    pub(crate) fn parse(input: parco::PositionedString) -> ParsingResult<Vec<Node>> {
+        let result: parco::CollResult<Vec<_>, _, _> = parco::collect_repeating(input, |input| node::parse(*input));
+        match result {
+            parco::CollResult::Ok((mut nodes, rest)) => {
+                nodes.shrink_to_fit();
+                ParsingResult::Ok((nodes, rest))
+            },
+            parco::CollResult::Fatal(err) => ParsingResult::Fatal(err),
         }
     }
 }
