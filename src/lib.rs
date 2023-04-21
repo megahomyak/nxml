@@ -1,9 +1,21 @@
 use thiserror::Error;
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct Text {
+    pub content: String,
+    /// Ended with a vertical bar (`|`).
+    pub ended_explicitly: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Sequence {
+    pub contents: Vec<Node>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Node {
-    Sequence(Vec<Node>),
-    Text(String),
+    Sequence(Sequence),
+    Text(Text),
 }
 
 #[derive(Debug, PartialEq, Eq, Error)]
@@ -97,28 +109,40 @@ mod text_character {
 mod text {
     use super::*;
 
-    pub(crate) fn parse(mut input: parco::PositionedString) -> ParsingResult<String> {
-        let mut result = String::new();
+    pub(crate) fn parse(mut input: parco::PositionedString) -> ParsingResult<Text> {
+        let mut content = String::new();
         loop {
             match text_character::parse(input) {
                 parco::Result::Ok((c, rest)) => {
                     input = rest.0;
                     match c {
                         text_character::Character::VerticalBar => {
-                            result.shrink_to_fit();
-                            return parco::Result::Ok((result, parco::Rest(input)));
+                            content.shrink_to_fit();
+                            return parco::Result::Ok((
+                                Text {
+                                    content,
+                                    ended_explicitly: true,
+                                },
+                                parco::Rest(input),
+                            ));
                         }
                         text_character::Character::Other(c) => {
-                            result.push(c);
+                            content.push(c);
                         }
                     }
                 }
                 parco::Result::Err => {
-                    if result.is_empty() {
+                    if content.is_empty() {
                         return parco::Result::Err;
                     }
-                    result.shrink_to_fit();
-                    return parco::Result::Ok((result, parco::Rest(input)));
+                    content.shrink_to_fit();
+                    return parco::Result::Ok((
+                        Text {
+                            content,
+                            ended_explicitly: false,
+                        },
+                        parco::Rest(input),
+                    ));
                 }
                 parco::Result::Fatal(e) => return parco::Result::Fatal(e),
             }
@@ -146,11 +170,15 @@ mod node {
         text::parse(input).map(|text| Node::Text(text)).or(|| {
             parco::one_matching_part(input, |c| *c == '[').and(|(_c, rest)| {
                 parco::one_matching_part(rest.0, |c| *c == ']')
-                    .map(|_c| Node::Sequence(vec![]))
+                    .map(|_c| {
+                        Node::Sequence(Sequence {
+                            contents: Vec::new(),
+                        })
+                    })
                     .or(|| {
                         sequence_of_nodes::parse(rest.0).and(|(nodes, input)| {
                             parco::one_matching_part(input.0, |c| *c == ']')
-                                .map(|_c| Node::Sequence(nodes))
+                                .map(|_c| Node::Sequence(Sequence { contents: nodes }))
                         })
                     })
                     .or(|| parco::Result::Fatal(FatalError::UnclosedBracket { pos: input.pos() }))
@@ -163,11 +191,14 @@ mod node {
 mod tests {
     use super::*;
 
-    fn text(s: &'static str) -> Node {
-        Node::Text(String::from(s))
+    fn text(s: &'static str, ended_explicitly: bool) -> Node {
+        Node::Text(Text {
+            content: String::from(s),
+            ended_explicitly,
+        })
     }
-    fn seq(s: Vec<Node>) -> Node {
-        Node::Sequence(s)
+    fn seq(contents: Vec<Node>) -> Node {
+        Node::Sequence(Sequence { contents })
     }
 
     #[test]
@@ -177,15 +208,15 @@ mod tests {
                 r#"text[first sequence item|second sequence item[subsequence]|third sequence item[]with an empty in-between sequence]"#
             ),
             Ok(vec![
-                text("text"),
+                text("text", false),
                 seq(vec![
-                    text("first sequence item"),
-                    text("second sequence item"),
-                    seq(vec![text("subsequence")]),
-                    text(""),
-                    text("third sequence item"),
+                    text("first sequence item", true),
+                    text("second sequence item", false),
+                    seq(vec![text("subsequence", false)]),
+                    text("", true),
+                    text("third sequence item", false),
                     seq(vec![]),
-                    text("with an empty in-between sequence")
+                    text("with an empty in-between sequence", false)
                 ])
             ])
         );
@@ -198,9 +229,9 @@ mod tests {
                 r#"[some vertical bars: \|\|\|][some brackets: \]\[\[\]][some backslashes: \\ \\ \\]"#
             ),
             Ok(vec![
-                seq(vec![text(r#"some vertical bars: |||"#)]),
-                seq(vec![text(r#"some brackets: ][[]"#)]),
-                seq(vec![text(r#"some backslashes: \ \ \"#)]),
+                seq(vec![text(r#"some vertical bars: |||"#, false)]),
+                seq(vec![text(r#"some brackets: ][[]"#, false)]),
+                seq(vec![text(r#"some backslashes: \ \ \"#, false)]),
             ])
         );
     }
@@ -209,7 +240,10 @@ mod tests {
     fn test_parsing_two_text_nodes() {
         assert_eq!(
             parse_sequential_nodes(r#"first text node|second text node"#),
-            Ok(vec![text("first text node"), text("second text node")])
+            Ok(vec![
+                text("first text node", true),
+                text("second text node", false)
+            ])
         );
     }
 
@@ -218,9 +252,9 @@ mod tests {
         assert_eq!(
             parse_sequential_nodes(r#"[|a[]]|[a||b]"#),
             Ok(vec![
-                seq(vec![text(""), text("a"), seq(vec![])]),
-                text(""),
-                seq(vec![text("a"), text(""), text("b")])
+                seq(vec![text("", true), text("a", false), seq(vec![])]),
+                text("", true),
+                seq(vec![text("a", true), text("", true), text("b", false)])
             ])
         );
     }
@@ -255,7 +289,7 @@ mod tests {
         assert_eq!(
             parse_one_node(r#"a["#),
             Ok(Some((
-                text("a"),
+                text("a", false),
                 parco::Rest(("[", parco::Position { row: 1, col: 2 }))
             )))
         );
@@ -284,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_parsing_only_a_text_terminator() {
-        assert_eq!(parse_sequential_nodes(r#"|"#), Ok(vec![text("")]));
+        assert_eq!(parse_sequential_nodes(r#"|"#), Ok(vec![text("", true)]));
     }
 
     #[test]
