@@ -20,13 +20,13 @@ pub enum Node {
 
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum Error {
-    #[error("there was an escaping character at the end of the input string")]
-    EscapeAtTheEndOfInput,
-    #[error("a character that is not escapable escaped at {pos:?}")]
-    UnknownCharacterEscaped { pos: parco::Position },
-    #[error("a bracket was not closed. The opening bracket is at {pos:?}")]
+    #[error("there was an escaping character at the end of the input string (the string ends at {input_end:?})")]
+    EscapeAtTheEndOfInput { input_end: parco::Position },
+    #[error("a character that is not escapable escaped at {character_position:?}")]
+    UnknownCharacterEscaped { character_position: parco::Position },
+    #[error("a bracket is not closed. The opening bracket is at {pos:?}")]
     UnclosedBracket { pos: parco::Position },
-    #[error("an unexpected closing bracket (it does not have a corresponding opening bracket) appeared at {pos:?}")]
+    #[error("an unexpected closing bracket (it has no corresponding opening bracket) appeared at {pos:?}")]
     UnexpectedClosingBracket { pos: parco::Position },
 }
 
@@ -42,7 +42,7 @@ pub fn parse_one_node(
     }
 }
 
-pub fn parse_sequential_nodes(input: &str) -> Result<Vec<Node>, Error> {
+pub fn parse_sequential_nodes(input: &str) -> Result<Sequence, Error> {
     match sequence_of_nodes::parse(input.into()) {
         ParsingResult::Ok((nodes, rest)) => {
             if rest.0.src().is_empty() {
@@ -51,19 +51,17 @@ pub fn parse_sequential_nodes(input: &str) -> Result<Vec<Node>, Error> {
                 Err(Error::UnexpectedClosingBracket { pos: rest.0.pos() })
             }
         }
-        ParsingResult::Err => Ok(vec![]),
-        ParsingResult::Fatal(e) => Err(match e {
-            FatalError::UnclosedBracket { pos } => Error::UnclosedBracket { pos },
-            FatalError::EscapeAtTheEndOfInput => Error::EscapeAtTheEndOfInput,
-            FatalError::UnknownCharacterEscaped { pos } => Error::UnknownCharacterEscaped { pos },
+        ParsingResult::Err => Ok(Sequence {
+            contents: Vec::new(),
         }),
+        ParsingResult::Fatal(e) => Err(e.into()),
     }
 }
 
 type ParsingResult<'s, T> = parco::Result<T, parco::PositionedString<'s>, FatalError>;
 
 enum FatalError {
-    EscapeAtTheEndOfInput,
+    EscapeAtTheEndOfInput { pos: parco::Position },
     UnknownCharacterEscaped { pos: parco::Position },
     UnclosedBracket { pos: parco::Position },
 }
@@ -72,8 +70,8 @@ impl From<FatalError> for Error {
     fn from(e: FatalError) -> Self {
         match e {
             FatalError::UnclosedBracket { pos } => Self::UnclosedBracket { pos },
-            FatalError::EscapeAtTheEndOfInput => Self::EscapeAtTheEndOfInput,
-            FatalError::UnknownCharacterEscaped { pos } => Self::UnknownCharacterEscaped { pos },
+            FatalError::EscapeAtTheEndOfInput { pos } => Self::EscapeAtTheEndOfInput { input_end: pos },
+            FatalError::UnknownCharacterEscaped { pos } => Self::UnknownCharacterEscaped { character_position: pos },
         }
     }
 }
@@ -99,7 +97,9 @@ mod text_character {
                         })
                     }
                 })
-                .or(|| parco::Result::Fatal(FatalError::EscapeAtTheEndOfInput)),
+                .or(|| {
+                    parco::Result::Fatal(FatalError::EscapeAtTheEndOfInput { pos: input.0.pos() })
+                }),
             '|' => parco::Result::Ok((Character::VerticalBar, input)),
             _ => parco::Result::Ok((Character::Other(c), input)),
         })
@@ -207,18 +207,20 @@ mod tests {
             parse_sequential_nodes(
                 r#"text[first sequence item|second sequence item[subsequence]|third sequence item[]with an empty in-between sequence]"#
             ),
-            Ok(vec![
-                text("text", false),
-                seq(vec![
-                    text("first sequence item", true),
-                    text("second sequence item", false),
-                    seq(vec![text("subsequence", false)]),
-                    text("", true),
-                    text("third sequence item", false),
-                    seq(vec![]),
-                    text("with an empty in-between sequence", false)
-                ])
-            ])
+            Ok(Sequence {
+                contents: vec![
+                    text("text", false),
+                    seq(vec![
+                        text("first sequence item", true),
+                        text("second sequence item", false),
+                        seq(vec![text("subsequence", false)]),
+                        text("", true),
+                        text("third sequence item", false),
+                        seq(vec![]),
+                        text("with an empty in-between sequence", false)
+                    ])
+                ]
+            })
         );
     }
 
@@ -228,11 +230,13 @@ mod tests {
             parse_sequential_nodes(
                 r#"[some vertical bars: \|\|\|][some brackets: \]\[\[\]][some backslashes: \\ \\ \\]"#
             ),
-            Ok(vec![
-                seq(vec![text(r#"some vertical bars: |||"#, false)]),
-                seq(vec![text(r#"some brackets: ][[]"#, false)]),
-                seq(vec![text(r#"some backslashes: \ \ \"#, false)]),
-            ])
+            Ok(Sequence {
+                contents: vec![
+                    seq(vec![text(r#"some vertical bars: |||"#, false)]),
+                    seq(vec![text(r#"some brackets: ][[]"#, false)]),
+                    seq(vec![text(r#"some backslashes: \ \ \"#, false)]),
+                ]
+            })
         );
     }
 
@@ -240,10 +244,12 @@ mod tests {
     fn test_parsing_two_text_nodes() {
         assert_eq!(
             parse_sequential_nodes(r#"first text node|second text node"#),
-            Ok(vec![
-                text("first text node", true),
-                text("second text node", false)
-            ])
+            Ok(Sequence {
+                contents: vec![
+                    text("first text node", true),
+                    text("second text node", false)
+                ]
+            })
         );
     }
 
@@ -251,17 +257,22 @@ mod tests {
     fn test_parsing_complicated_input() {
         assert_eq!(
             parse_sequential_nodes(r#"[|a[]]|[a||b]"#),
-            Ok(vec![
-                seq(vec![text("", true), text("a", false), seq(vec![])]),
-                text("", true),
-                seq(vec![text("a", true), text("", true), text("b", false)])
-            ])
+            Ok(Sequence {
+                contents: vec![
+                    seq(vec![text("", true), text("a", false), seq(vec![])]),
+                    text("", true),
+                    seq(vec![text("a", true), text("", true), text("b", false)])
+                ]
+            })
         );
     }
 
     #[test]
     fn test_parsing_empty_input() {
-        assert_eq!(parse_sequential_nodes(r#""#), Ok(vec![]));
+        assert_eq!(
+            parse_sequential_nodes(r#""#),
+            Ok(Sequence { contents: vec![] })
+        );
     }
 
     #[test]
@@ -304,7 +315,9 @@ mod tests {
     fn test_immediate_escape_at_the_end_of_input_detection() {
         assert_eq!(
             parse_sequential_nodes(r#"\"#),
-            Err(Error::EscapeAtTheEndOfInput)
+            Err(Error::EscapeAtTheEndOfInput {
+                input_end: parco::Position { col: 2, row: 1 }
+            })
         );
     }
 
@@ -312,13 +325,20 @@ mod tests {
     fn test_escape_at_the_end_of_input_detection() {
         assert_eq!(
             parse_sequential_nodes(r#"abc\"#),
-            Err(Error::EscapeAtTheEndOfInput)
+            Err(Error::EscapeAtTheEndOfInput {
+                input_end: parco::Position { col: 5, row: 1 }
+            })
         );
     }
 
     #[test]
     fn test_parsing_only_a_text_terminator() {
-        assert_eq!(parse_sequential_nodes(r#"|"#), Ok(vec![text("", true)]));
+        assert_eq!(
+            parse_sequential_nodes(r#"|"#),
+            Ok(Sequence {
+                contents: vec![text("", true)]
+            })
+        );
     }
 
     #[test]
@@ -326,7 +346,7 @@ mod tests {
         assert_eq!(
             parse_sequential_nodes(r#"a\b"#),
             Err(Error::UnknownCharacterEscaped {
-                pos: parco::Position { col: 3, row: 1 }
+                character_position: parco::Position { col: 3, row: 1 }
             })
         );
     }
@@ -356,7 +376,7 @@ mod tests {
         assert_eq!(
             parse_sequential_nodes("\n\\a"),
             Err(Error::UnknownCharacterEscaped {
-                pos: parco::Position { col: 2, row: 2 }
+                character_position: parco::Position { col: 2, row: 2 }
             })
         );
     }
