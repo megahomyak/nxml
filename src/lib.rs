@@ -153,12 +153,12 @@ mod text {
 mod sequence_of_nodes {
     use super::*;
 
-    pub(crate) fn parse(input: parco::PositionedString) -> ParsingResult<Vec<Node>> {
+    pub(crate) fn parse(input: parco::PositionedString) -> ParsingResult<Sequence> {
         let result: ParsingResult<Vec<_>> =
             parco::collect_repeating(input, |input| node::parse(*input)).into();
-        result.map(|mut nodes| {
-            nodes.shrink_to_fit();
-            nodes
+        result.map(|mut contents| {
+            contents.shrink_to_fit();
+            Sequence { contents }
         })
     }
 }
@@ -176,9 +176,9 @@ mod node {
                         })
                     })
                     .or(|| {
-                        sequence_of_nodes::parse(rest.0).and(|(nodes, input)| {
+                        sequence_of_nodes::parse(rest.0).and(|(sequence, input)| {
                             parco::one_matching_part(input.0, |c| *c == ']')
-                                .map(|_c| Node::Sequence(Sequence { contents: nodes }))
+                                .map(|_c| Node::Sequence(sequence))
                         })
                     })
                     .or(|| parco::Result::Fatal(FatalError::UnclosedBracket { pos: input.pos() }))
