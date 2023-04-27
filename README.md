@@ -2,6 +2,17 @@
 
 NXML is a markup language that is **not XML**. It was based on XML, but went in a very different direction and now does not resemble XML at all.
 
+## Why is this a decent language
+
+* Simpler than JSON
+* Can be losslessly decoded and encoded using this library
+* Very flexible and concise at the same time
+* Escape sequences are concise (just `\` and your character), not some incomprehensible bullshit like those in XML
+
+## Why there are no built-in types (apart from sequences and strings)
+
+When was the last time you've been working with structures that required you to interpret them differently based on types of some of their fields? Never? Well, me too, and that's the reason.
+
 ## Syntax explanation
 
 * A node is either a text (`hello`) or a sequence (`[I|am|a|sequence]`)
